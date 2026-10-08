@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/harrellgis/gee_utils"
+Repository = "https://github.com/Natural-State/gee_utils"
 
 [project.optional-dependencies]
 notebook = [
