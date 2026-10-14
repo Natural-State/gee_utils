@@ -105,8 +105,12 @@ gee_utils/
 │   ├── __init__.py          # initialize() entry point + re-exports configure/get_project
 │   ├── _config.py           # module-level project_id state: configure() / get_project()
 │   ├── constants.py         # ALL collection IDs, band lists, band maps, scale factors, mask thresholds
-│   ├── io.py                # Export to Drive / EE assets; task status helpers
-│   ├── utils.py             # date-range validation, AOI/GPKG → ee.Geometry, clipping, joins, temporal reducers, resampling
+│   ├── compositing.py       # build_composite / build_period_composites (annual, monthly) / build_seasonal_composites
+│   ├── io.py                # Export to Drive / EE assets, GeoTIFF/shapefile asset uploads; task status helpers
+│   ├── utils.py             # date windows/validation, clipping, collection/image min-max, joins, temporal reducers, resampling
+│   ├── vectors.py           # local vector files (GPKG/GeoJSON/SHP) → ee.Geometry / ee.Feature / site FeatureCollections
+│   ├── zonal.py             # per-region reductions, region timeseries, point sampling, histogram summaries
+│   ├── workflows.py         # end-to-end site timeseries pipelines: run_site_timeseries / run_seasonal_site_timeseries
 │   ├── sensors/
 │   │   ├── indices.py       # all spectral-index functions + calc_indices()/calc_veg_indices() multi-index builders
 │   │   ├── masking.py       # shared cloud/water mask helpers used by the optical sensors
@@ -132,7 +136,7 @@ gee_utils/
 │   │   ├── collection.py    # medoid composite + multi-sensor (Roy-harmonized) annual builder
 │   │   ├── segmentation.py  # run-param defaults + run_landtrendr / run_landtrendr_from_aoi
 │   │   └── outputs.py       # get_change_map / get_fitted_stack / get_segment_data (array-image parsers)
-│   └── visualization/       # plots.py, summaries.py, tables.py (matplotlib/seaborn/pandas)
+│   └── visualization/       # plots.py, tables.py (matplotlib/seaborn/pandas)
 │                            # + vis_params.py (ready-made EE/geemap visParams presets)
 └── tests/                   # one test_*.py per source module; conftest.py holds shared
                              # fixtures + the ee_session fixture (see "Testing")

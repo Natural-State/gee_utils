@@ -3,8 +3,9 @@
 Reusable [Google Earth Engine](https://earthengine.google.com/) utilities for
 satellite data processing and analysis. `eetools` wraps multi-sensor imagery
 behind a consistent API: build cloud- and water-masked image collections, append
-a harmonized set of spectral indices, reduce over time, export to Drive or Earth
-Engine assets, and summarize/visualize the results.
+a harmonized set of spectral indices and image texture, composite over time, reduce
+over site boundaries, export to Drive or Earth Engine assets, and summarize/visualize
+the results.
 
 Supported sources: **Sentinel-2 SR**, **Landsat 5/7/8/9 C2 L2 SR**, **NASA HLS**
 (L30/S30), **MODIS** (MCD15A3H LAI/FPAR, MOD13Q1 NDVI/EVI, MCD64A1 burned area,
@@ -38,7 +39,7 @@ To use `eetools` as a dependency in another project, install it directly:
 ```bash
 uv pip install -e /path/to/gee_utils      # editable
 # or
-uv pip install git+https://github.com/<owner>/gee_utils.git
+uv pip install git+https://github.com/Natural-State/gee_utils.git
 ```
 
 ### Optional dependencies
@@ -56,7 +57,7 @@ uv sync --extra notebook
 # As a dependency in another project
 uv pip install -e "/path/to/gee_utils[notebook]"
 # or
-uv pip install "eetools[notebook] @ git+https://github.com/<owner>/gee_utils.git"
+uv pip install "eetools[notebook] @ git+https://github.com/Natural-State/gee_utils.git"
 ```
 
 ## Authentication
@@ -129,13 +130,23 @@ Indices come from a central registry (`eetools.sensors.indices.INDEX_REGISTRY`);
 same `indices`/`domains` arguments are accepted by `calc_indices()` directly. Adding a
 new index is a single registry entry.
 
-Use `build_period_composites` to reduce a collection to one composite per year or
-month, or `build_seasonal_composites` to produce one composite per year restricted
-to a recurring window of months (e.g. a wet or dry season):
+### Compositing
+
+`eetools.compositing` reduces a collection over time:
+- `build_composite` makes a single composite.
+- `build_period_composites` makes one composite per year or month.
+- `build_seasonal_composites` makes one composite per year, restricted to a recurring
+  window of months such as a wet or dry season.
 
 ```python
-from eetools.visualization.summaries import build_seasonal_composites
+from eetools.compositing import build_period_composites, build_seasonal_composites
 from eetools.constants import SEASON_WET  # (3, 5) — Mar–May; override per region
+
+# One median composite per year
+annual = build_period_composites(
+    collection, bands=["NDVI"], start_date="2018-01-01", end_date="2024-01-01",
+    temporal_scale="annual",
+)
 
 # One median composite per year covering the wet-season months (Mar–May)
 wet_season = build_seasonal_composites(
@@ -150,10 +161,58 @@ wet_season = build_seasonal_composites(
 # Each image carries year, season, season_months, image_count, composite_stat properties
 ```
 
+### Sensor builders
+
 Each sensor exposes a `get_<sensor>_collection(aoi, start_date, end_date, ...)`
-builder (`get_l8_sr_collection`, `get_hls_merged_collection`,
-`get_chirps_collection`, `get_modis_lai_fpar_col`, …) that validates the date
-range, applies scale factors, and appends indices via the sensor's band map.
+builder that validates the date range, applies scale factors, and appends indices
+via the sensor's band map. Examples are `get_l8_sr_collection`,
+`get_landsat_sr_collection`, `get_hls_merged_collection`, `get_chirps_collection`,
+`get_modis_vi_collection`, `get_s1_grd_collection` and
+`get_dynamic_world_collection`.
+
+These sources don't follow the collection-builder shape:
+- **Static or single-image:** `get_copernicus_dem` / `get_terrain`,
+  `get_forest_change_image` (Hansen), `get_bii`, `get_sm2rain_climatology`.
+- **Vector:** `get_wdpa_collection` / `get_wdpa_in_aoi` return an
+  `ee.FeatureCollection`.
+
+### Site boundaries and zonal statistics
+
+`eetools.vectors` turns local boundary files (GeoPackage, GeoJSON, Shapefile, …) into
+Earth Engine geometries and features. `eetools.zonal` reduces images and collections
+over them. `eetools.workflows.run_site_timeseries` chains the whole pipeline for a set
+of sites: build the collection, composite it, reduce per site, and export the table to
+Drive.
+
+```python
+from functools import partial
+
+from eetools.vectors import vector_files_to_feature_collection
+from eetools.workflows import run_site_timeseries
+from eetools.visualization.tables import stats_fc_to_df
+
+# One feature per file, with caller-supplied site identity
+sites = vector_files_to_feature_collection(
+    [("site_a.gpkg", "A", "Site A"), ("site_b.geojson", "B", "Site B")]
+)
+
+builder = partial(get_s2_sr_collection, indices=["NDVI", "EVI"])
+stats = run_site_timeseries(
+    sites_fc=sites,
+    collection_builder=builder,
+    bands=["NDVI", "EVI"],
+    start_date="2020-01-01",
+    end_date="2024-01-01",
+    export_folder="eetools_exports",
+    file_prefix="s2_annual",
+    scale=10,
+)
+df = stats_fc_to_df(stats)  # pandas DataFrame, ready for eetools.visualization.plots
+```
+
+`run_seasonal_site_timeseries` does the same with seasonal composites. The default
+`scale` of these reducers is coarse (5566 m) so they run quickly, so set it to the
+sensor's resolution for real analyses.
 
 ### Texture
 
@@ -190,13 +249,17 @@ treat it with care.
 
 ```
 src/eetools/
-├── _config.py        # global project-id state
-├── constants.py      # collection IDs, band maps, scale factors, mask thresholds
-├── io.py             # exports to Drive / EE assets, task status helpers
-├── utils.py          # geometry/GPKG helpers, date validation, reducers, resampling
+├── _config.py        # global project-id state (initialize / configure / get_project)
+├── constants.py      # collection IDs, band maps, scale factors, mask thresholds, texture defaults
+├── compositing.py    # single, per-period (annual/monthly) and seasonal composites
+├── io.py             # exports to Drive / EE assets, asset uploads, task status helpers
+├── utils.py          # date windows/validation, clipping, min/max, joins, temporal reducers, resampling
+├── vectors.py        # local vector files -> ee.Geometry / ee.Feature / site FeatureCollections
+├── zonal.py          # per-region reductions, timeseries, sampling and histograms
+├── workflows.py      # end-to-end site timeseries pipelines (annual/monthly and seasonal)
 ├── sensors/          # per-sensor masking.py + preprocessing.py, plus indices.py and texture.py
 ├── landtrendr/       # LandTrendr temporal-segmentation method (collection/segmentation/outputs)
-└── visualization/    # plots.py, summaries.py, tables.py, vis_params.py
+└── visualization/    # plots.py, tables.py, vis_params.py
 ```
 
 ## Development
